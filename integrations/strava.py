@@ -13,10 +13,19 @@ STRAVA_BASE_URL = "https://www.strava.com/api/v3"
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 
 
+def _as_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _expires_soon(expires_at: datetime | None, *, margin_seconds: int = 90) -> bool:
-    if expires_at is None:
+    expires_at_utc = _as_utc(expires_at)
+    if expires_at_utc is None:
         return False
-    return expires_at <= datetime.now(timezone.utc) + timedelta(seconds=margin_seconds)
+    return expires_at_utc <= datetime.now(timezone.utc) + timedelta(seconds=margin_seconds)
 
 
 def get_strava_token(db: Session) -> AuthToken:
@@ -39,7 +48,7 @@ def refresh_strava_token_if_needed(db: Session) -> AuthToken:
         "grant_type": "refresh_token",
         "refresh_token": token.refresh_token,
     }
-    response = httpx.post(STRAVA_TOKEN_URL, data=payload, timeout=30)
+    response = httpx.post(STRAVA_TOKEN_URL, data=payload, timeout=30, trust_env=False)
     response.raise_for_status()
     token_data = response.json()
     token.access_token = token_data["access_token"]
@@ -72,6 +81,7 @@ def fetch_activities(db: Session, target_date: date) -> list[dict[str, Any]]:
         headers=_auth_headers(token.access_token),
         params=params,
         timeout=30,
+        trust_env=False,
     )
     response.raise_for_status()
     return response.json()
@@ -83,6 +93,7 @@ def fetch_activity_detail(db: Session, activity_id: str) -> dict[str, Any]:
         f"{STRAVA_BASE_URL}/activities/{activity_id}",
         headers=_auth_headers(token.access_token),
         timeout=30,
+        trust_env=False,
     )
     response.raise_for_status()
     return response.json()

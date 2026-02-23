@@ -6,7 +6,9 @@ from typing import Any
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse
+from requests import RequestException
 from requests_oauthlib import OAuth1Session
+from requests_oauthlib.oauth1_session import TokenRequestDenied
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -102,6 +104,8 @@ def run_sync_for_date(
 
 @app.get("/auth/strava")
 def auth_strava() -> RedirectResponse:
+    if not settings.strava_client_id or not settings.strava_client_secret:
+        raise HTTPException(status_code=400, detail="Strava credentials are not configured in .env.")
     redirect_url = (
         f"{STRAVA_AUTH_URL}"
         f"?client_id={settings.strava_client_id}"
@@ -123,8 +127,12 @@ def auth_strava_callback(
         "client_secret": settings.strava_client_secret,
         "code": code,
         "grant_type": "authorization_code",
+        "redirect_uri": settings.strava_redirect_uri,
     }
-    response = httpx.post(STRAVA_TOKEN_URL, data=payload, timeout=30)
+    try:
+        response = httpx.post(STRAVA_TOKEN_URL, data=payload, timeout=30, trust_env=False)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Strava token exchange network error: {exc}") from exc
     if response.status_code >= 400:
         raise HTTPException(status_code=400, detail=f"Strava token exchange failed: {response.text}")
     token_data = response.json()
@@ -141,6 +149,8 @@ def auth_strava_callback(
 
 @app.get("/auth/whoop")
 def auth_whoop() -> RedirectResponse:
+    if not settings.whoop_client_id or not settings.whoop_client_secret:
+        raise HTTPException(status_code=400, detail="Whoop credentials are not configured in .env.")
     redirect_url = (
         f"{WHOOP_AUTH_URL}"
         f"?client_id={settings.whoop_client_id}"
@@ -183,12 +193,17 @@ def auth_whoop_callback(
 
 @app.get("/auth/garmin")
 def auth_garmin() -> RedirectResponse:
+    if not settings.garmin_consumer_key or not settings.garmin_consumer_secret:
+        raise HTTPException(status_code=400, detail="Garmin credentials are not configured in .env.")
     oauth = OAuth1Session(
         settings.garmin_consumer_key,
         client_secret=settings.garmin_consumer_secret,
         callback_uri=settings.garmin_redirect_uri,
     )
-    response_text = oauth.fetch_request_token(GARMIN_REQUEST_TOKEN_URL)
+    try:
+        response_text = oauth.fetch_request_token(GARMIN_REQUEST_TOKEN_URL)
+    except (TokenRequestDenied, RequestException) as exc:
+        raise HTTPException(status_code=400, detail=f"Garmin OAuth request token failed: {exc}") from exc
     request_token = response_text["oauth_token"]
     request_secret = response_text["oauth_token_secret"]
     GARMIN_TEMP_SECRETS[request_token] = request_secret

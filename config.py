@@ -5,7 +5,8 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# Prefer project .env values over any stale exported shell variables.
+load_dotenv(override=True)
 
 
 @dataclass(frozen=True)

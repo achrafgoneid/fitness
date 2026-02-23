@@ -13,10 +13,19 @@ WHOOP_BASE_URL = "https://api.prod.whoop.com/developer/v1"
 WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token"
 
 
+def _as_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _expires_soon(expires_at: datetime | None, *, margin_seconds: int = 90) -> bool:
-    if expires_at is None:
+    expires_at_utc = _as_utc(expires_at)
+    if expires_at_utc is None:
         return False
-    return expires_at <= datetime.now(timezone.utc) + timedelta(seconds=margin_seconds)
+    return expires_at_utc <= datetime.now(timezone.utc) + timedelta(seconds=margin_seconds)
 
 
 def get_whoop_token(db: Session) -> AuthToken:
